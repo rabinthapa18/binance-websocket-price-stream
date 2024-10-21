@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
@@ -19,12 +20,11 @@ type OrderBook struct {
 // constants
 const (
 	binanceWebSocketEndpoint = "wss://stream.binance.com:9443/ws/btcusdt@depth"
-	streamName               = "btcusdt@depth"
 	responseStreamName       = "depthUpdate"
 )
 
 // for keeping track of WebSocket clients
-var clients = make(map[*websocket.Conn]bool)
+var clients = sync.Map{}
 var broadcast = make(chan float64)
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -106,12 +106,12 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ws.Close()
 
-	clients[ws] = true
+	clients.Store(ws, true)
 
 	for {
 		_, _, err := ws.ReadMessage() // keeping the connection alive
 		if err != nil {
-			delete(clients, ws)
+			clients.Delete(ws)
 			break
 		}
 	}
@@ -121,14 +121,16 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 func handleMessages() {
 	for {
 		avgPrice := <-broadcast
-		for client := range clients {
-			err := client.WriteJSON(avgPrice)
+		clients.Range(func(client, _ interface{}) bool {
+			ws := client.(*websocket.Conn)
+			err := ws.WriteJSON(avgPrice)
 			if err != nil {
 				log.Printf("Error writing message to client: %v", err)
-				client.Close()
-				delete(clients, client)
+				ws.Close()
+				clients.Delete(client)
 			}
-		}
+			return true
+		})
 	}
 }
 
