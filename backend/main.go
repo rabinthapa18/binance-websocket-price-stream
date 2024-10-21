@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"strconv"
 
 	"github.com/gorilla/websocket"
 )
@@ -56,24 +57,33 @@ func readMessages(conn *websocket.Conn) {
 			var orderBook OrderBook
 			json.Unmarshal(message, &orderBook)
 
-			// DEBUG: printing the order book
-			log.Println("Bids quantities:")
-			for _, bid := range orderBook.Bids {
-				price := bid[0]
-				quantity := bid[1]
-				log.Printf("Price: %s, Quantity: %s\n", price, quantity)
-			}
+			averagePrice := calculateAverage(orderBook)
 
-			// DEBUG: printing the order book
-			log.Println("Asks quantities:")
-			for _, ask := range orderBook.Asks {
-				price := ask[0]
-				quantity := ask[1]
-				log.Printf("Price: %s, Quantity: %s\n", price, quantity)
-			}
+			// DEBUG: print the average price upto 2 decimal places
+			log.Printf("Average Price: %.2f\n", averagePrice)
 
 		}
 	}
+}
+
+// function to calculate average price
+func calculateAverage(orderBook OrderBook) float64 {
+	var totalPrice float64
+	var totalCount int
+
+	for _, bid := range orderBook.Bids {
+		price, _ := strconv.ParseFloat(bid[0], 64)
+		totalPrice += price
+		totalCount++
+	}
+
+	for _, ask := range orderBook.Asks {
+		price, _ := strconv.ParseFloat(ask[0], 64)
+		totalPrice += price
+		totalCount++
+	}
+
+	return totalPrice / float64(totalCount)
 }
 
 func main() {
