@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"net/http"
 	"strconv"
 
 	"github.com/gorilla/websocket"
@@ -21,6 +22,15 @@ const (
 	streamName               = "btcusdt@depth"
 	responseStreamName       = "depthUpdate"
 )
+
+// for keeping track of WebSocket clients
+var clients = make(map[*websocket.Conn]bool)
+var broadcast = make(chan float64)
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true // accept all requests
+	},
+}
 
 // function to connect to Binance WebSocket
 func connectToBinance() *websocket.Conn {
@@ -62,6 +72,8 @@ func processMessage(conn *websocket.Conn) {
 			// DEBUG: print the average price upto 2 decimal places
 			log.Printf("Average Price: %.2f\n", averagePrice)
 
+			// broadcasting average price to all clients
+			broadcast <- averagePrice
 		}
 	}
 }
@@ -86,7 +98,47 @@ func calculateAverage(orderBook OrderBook) float64 {
 	return totalPrice / float64(totalCount)
 }
 
+// function to handle new WebSocket clients
+func handleConnections(w http.ResponseWriter, r *http.Request) {
+	ws, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Fatal("Error upgrading to WebSocket:", err)
+	}
+	defer ws.Close()
+
+	clients[ws] = true
+
+	for {
+		_, _, err := ws.ReadMessage() // keeping the connection alive
+		if err != nil {
+			delete(clients, ws)
+			break
+		}
+	}
+}
+
+// function to broadcast messages to clients
+func handleMessages() {
+	for {
+		avgPrice := <-broadcast
+		for client := range clients {
+			err := client.WriteJSON(avgPrice)
+			if err != nil {
+				log.Printf("Error writing message to client: %v", err)
+				client.Close()
+				delete(clients, client)
+			}
+		}
+	}
+}
+
 func main() {
 	conn := connectToBinance()
-	processMessage(conn)
+
+	go processMessage(conn)
+	go handleMessages()
+
+	http.HandleFunc("/ws", handleConnections)
+	log.Println("WebSocket server started on :8080")
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
