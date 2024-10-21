@@ -37,7 +37,7 @@ func connectToBinance() *websocket.Conn {
 }
 
 // function to read messages from Binance WebSocket
-func readMessages(conn *websocket.Conn) {
+func processMessage(conn *websocket.Conn) {
 	defer conn.Close()
 
 	for {
@@ -88,5 +88,5 @@ func calculateAverage(orderBook OrderBook) float64 {
 
 func main() {
 	conn := connectToBinance()
-	readMessages(conn)
+	processMessage(conn)
 }
